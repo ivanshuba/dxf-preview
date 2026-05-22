@@ -2,6 +2,7 @@ import argparse
 import math
 import os
 import sys
+from pathlib import Path
 
 import ezdxf
 import matplotlib
@@ -331,74 +332,21 @@ def build_output_path(input_path, output_path):
 
     output_path = os.path.expanduser(output_path)
 
-    # If it's an existing directory, write default file name into it.
     if os.path.isdir(output_path):
         return os.path.abspath(os.path.join(output_path, default_name))
 
-    # If user passed "." or a path ending with separator, treat it as a directory.
     if output_path in (".", "..") or output_path.endswith(os.sep):
         return os.path.abspath(os.path.join(output_path, default_name))
 
-    # If the path has no extension and does not exist yet, treat it as a directory.
     base_name = os.path.basename(output_path)
-    root, ext = os.path.splitext(base_name)
+    _, ext = os.path.splitext(base_name)
     if not ext and not os.path.exists(output_path):
         return os.path.abspath(os.path.join(output_path, default_name))
 
     return os.path.abspath(output_path)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Create a white-background PNG preview from flat 2D DXF geometry.",
-    )
-
-    parser.add_argument(
-        "input",
-        help="Input DXF file path.",
-    )
-
-    parser.add_argument(
-        "--output",
-        default=None,
-        help="Output PNG file path. Defaults to input filename with .png extension.",
-    )
-
-    parser.add_argument(
-        "--width",
-        type=int,
-        default=1000,
-        help="Output image width in pixels. Default: 1000.",
-    )
-
-    parser.add_argument(
-        "--scale",
-        type=float,
-        default=1.0,
-        help="Geometry scale factor. Default: 1.0.",
-    )
-
-    parser.add_argument(
-        "--line-width",
-        type=float,
-        default=1.0,
-        help="Black stroke width. Default: 1.0.",
-    )
-
-    args = parser.parse_args()
-
-    input_path = args.input
-    output_path = build_output_path(input_path, args.output)
-
-    if args.width <= 0:
-        raise ValueError("--width must be greater than zero")
-
-    if args.scale <= 0:
-        raise ValueError("--scale must be greater than zero")
-
-    if args.line_width <= 0:
-        raise ValueError("--line-width must be greater than zero")
-
+def render_single_file(input_path, output_path, width, scale, line_width):
     try:
         doc = ezdxf.readfile(input_path)
     except IOError as exc:
@@ -425,9 +373,9 @@ def main():
         if process_entity(
             ax,
             entity,
-            args.scale,
+            scale,
             bounds,
-            args.line_width,
+            line_width,
         ):
             rendered_count += 1
 
@@ -449,7 +397,7 @@ def main():
     if height_units <= 0:
         height_units = 1
 
-    image_width = args.width
+    image_width = width
     image_height = max(
         1,
         int(round(image_width * height_units / width_units)),
@@ -515,6 +463,159 @@ def main():
 
     if skipped_counts:
         print(f"Skipped unsupported/non-2D entities: {format_counts(skipped_counts)}")
+
+
+def find_dxf_files(folder, recursive_level):
+    folder_path = Path(folder)
+
+    if not folder_path.exists():
+        raise RuntimeError(f"Folder does not exist: {folder}")
+
+    if not folder_path.is_dir():
+        raise RuntimeError(f"--folder must point to a directory: {folder}")
+
+    if recursive_level <= 0:
+        return [
+            item
+            for item in folder_path.iterdir()
+            if item.is_file() and item.suffix.lower() == ".dxf"
+        ]
+
+    root_parts = len(folder_path.resolve().parts)
+    matches = []
+
+    for current_root, _, files in os.walk(folder_path):
+        current_path = Path(current_root)
+        depth = len(current_path.resolve().parts) - root_parts
+
+        if depth > recursive_level:
+            continue
+
+        for file_name in files:
+            if file_name.lower().endswith(".dxf"):
+                matches.append(current_path / file_name)
+
+    return matches
+
+
+def render_folder_mode(folder, recursive_level, width, scale, line_width):
+    matches = find_dxf_files(folder, recursive_level)
+
+    if not matches:
+        raise RuntimeError(f"No DXF files were found in folder: {folder}")
+
+    success_count = 0
+    failure_count = 0
+
+    for match in matches:
+        output_path = os.path.splitext(str(match))[0] + ".png"
+
+        try:
+            render_single_file(
+                input_path=str(match),
+                output_path=output_path,
+                width=width,
+                scale=scale,
+                line_width=line_width,
+            )
+            success_count += 1
+        except Exception as exc:
+            failure_count += 1
+            print(f"Error rendering {match}: {exc}", file=sys.stderr)
+
+    print(f"Matched DXF files: {len(matches)}")
+    print(f"Rendered previews: {success_count}")
+
+    if failure_count:
+        raise RuntimeError(f"Failed to render {failure_count} file(s)")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Create a white-background PNG preview from flat 2D DXF geometry.",
+    )
+
+    parser.add_argument(
+        "input",
+        nargs="?",
+        help="Input DXF file path. Required in single-file mode, optional with --folder.",
+    )
+
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Output PNG file path or output directory. Defaults to input filename with .png extension.",
+    )
+
+    parser.add_argument(
+        "--folder",
+        default=None,
+        help="If set, render previews for all DXF files in the folder.",
+    )
+
+    parser.add_argument(
+        "--recursive",
+        type=int,
+        default=0,
+        help="Recursive search depth used only together with --folder. Ignored otherwise.",
+    )
+
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=1000,
+        help="Output image width in pixels. Default: 1000.",
+    )
+
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        help="Geometry scale factor. Default: 1.0.",
+    )
+
+    parser.add_argument(
+        "--line-width",
+        type=float,
+        default=1.0,
+        help="Black stroke width. Default: 1.0.",
+    )
+
+    args = parser.parse_args()
+
+    if args.width <= 0:
+        raise ValueError("--width must be greater than zero")
+
+    if args.scale <= 0:
+        raise ValueError("--scale must be greater than zero")
+
+    if args.line_width <= 0:
+        raise ValueError("--line-width must be greater than zero")
+
+    if args.folder:
+        if args.recursive < 0:
+            raise ValueError("--recursive must be zero or greater")
+
+        render_folder_mode(
+            folder=args.folder,
+            recursive_level=args.recursive,
+            width=args.width,
+            scale=args.scale,
+            line_width=args.line_width,
+        )
+        return
+
+    if not args.input:
+        raise RuntimeError("Input DXF file is required in single-file mode")
+
+    output_path = build_output_path(args.input, args.output)
+    render_single_file(
+        input_path=args.input,
+        output_path=output_path,
+        width=args.width,
+        scale=args.scale,
+        line_width=args.line_width,
+    )
 
 
 if __name__ == "__main__":

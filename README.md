@@ -102,6 +102,13 @@ Then create `requirements.txt`:
 
 ## Usage from terminal
 
+The script supports two modes:
+
+1. **Single-file mode** — render one DXF file, one must specify the file path
+2. **Folder mode** — render every DXF file in a folder, optionally recursively
+
+### Single-file mode
+
 Basic usage:
 
     python render_dxf.py path\to\drawing.dxf
@@ -119,6 +126,23 @@ For example:
 becomes:
 
     .\examples\part.png
+
+### Folder mode
+
+Render all DXF files in a folder:
+
+    python render_dxf.py --folder E:\tmp
+
+Render all DXF files in a folder and subfolders up to a chosen recursion depth:
+
+    python render_dxf.py --folder E:\tmp --recursive 2
+
+In folder mode, the script processes every `.dxf` file it finds and saves the PNG preview next to each DXF file using the same base file name.
+
+Example:
+
+- `part1.dxf` becomes `part1.png`
+- `nested\gear.dxf` becomes `nested\gear.png`
 
 ### Output path behavior
 
@@ -145,13 +169,17 @@ The script also creates missing output directories automatically when needed.
 
 ### Input DXF file
 
-The input file path is required:
+The input file path is required in single-file mode:
 
     python render_dxf.py .\drawing.dxf
 
+In folder mode, the positional input argument is optional:
+
+    python render_dxf.py --folder E:\tmp --recursive 2
+
 ### Output PNG file or directory
 
-Use `--output` to choose the output path:
+Use `--output` to choose the output path in single-file mode:
 
     python render_dxf.py .\drawing.dxf --output .\preview.png
 
@@ -160,6 +188,24 @@ Or provide a directory:
     python render_dxf.py .\drawing.dxf --output .\previews
 
 If `--output` is not provided, the output path is created by replacing the input file extension with `.png`.
+
+Note: `--output` is used only in single-file mode. In folder mode, previews are saved next to each DXF file found in the folder tree.
+
+### Folder mode
+
+Use `--folder` to render previews for all DXF files found in a folder:
+
+    python render_dxf.py --folder E:\tmp
+
+If `--recursive` is also provided, the script searches subfolders up to that depth:
+
+    python render_dxf.py --folder E:\tmp --recursive 2
+
+Notes:
+
+- `--folder` enables batch processing mode
+- `--recursive` works only together with `--folder`
+- `--recursive` is ignored when `--folder` is not provided
 
 ### Image width
 
@@ -242,6 +288,10 @@ Example script parameters:
 You can also point `--output` to a folder:
 
     .\examples\part.dxf --output .\examples\previews
+
+To render all DXF files in a folder and all its subfolders:
+
+    --folder E:\tmp --recursive 2
 
 [Back to top](#dxf-preview-renderer)
 
@@ -330,7 +380,7 @@ To render all DXF files in the repository, use a loop:
             uses: actions/upload-artifact@v4
             with:
               name: dxf-previews
-              path: output/*.png
+              path: ./samples/**/*.png
 
 [Back to top](#dxf-preview-renderer)
 
@@ -379,6 +429,14 @@ If you want a guaranteed file output, pass a full file name:
 Or save into a folder and let the script choose the PNG name:
 
     python render_dxf.py .\drawing.dxf --output E:\previews
+
+### Folder mode finds no DXF files
+
+If `--folder` is used and no files are found:
+
+- check that the folder exists
+- verify that it contains `.dxf` files
+- increase `--recursive` if the files are in subfolders
 
 [Back to top](#dxf-preview-renderer)
 
