@@ -169,6 +169,42 @@ def is_closed_polyline(entity):
         return False
 
 
+def sample_arc(entity, segments=64):
+    try:
+        center = entity.dxf.center
+        radius = entity.dxf.radius
+
+        start_angle = math.radians(entity.dxf.start_angle)
+        end_angle = math.radians(entity.dxf.end_angle)
+
+        if end_angle < start_angle:
+            end_angle += 2 * math.pi
+
+        angle_span = end_angle - start_angle
+
+        segment_count = max(
+            2,
+            int(segments * angle_span / (2 * math.pi)),
+        )
+
+        angles = np.linspace(
+            start_angle,
+            end_angle,
+            segment_count,
+        )
+
+        return [
+            (
+                center.x + radius * math.cos(angle),
+                center.y + radius * math.sin(angle),
+            )
+            for angle in angles
+        ]
+
+    except Exception:
+        return []
+
+
 def process_entity(
     ax,
     entity,
@@ -214,26 +250,16 @@ def process_entity(
         return True
 
     if dxftype == "ARC":
-        center = apply_scale(entity.dxf.center, scale)
-        radius = entity.dxf.radius * scale
+        points = sample_arc(entity)
 
-        patch = Arc(
-            center,
-            2 * radius,
-            2 * radius,
-            angle=0,
-            theta1=entity.dxf.start_angle,
-            theta2=entity.dxf.end_angle,
-            linewidth=line_width,
-            color="black",
+        return add_polyline(
+            ax,
+            points,
+            scale,
+            bounds,
+            line_width,
+            closed=False,
         )
-
-        ax.add_patch(patch)
-
-        update_bounds(center[0] - radius, center[1] - radius, bounds)
-        update_bounds(center[0] + radius, center[1] + radius, bounds)
-
-        return True
 
     if dxftype == "ELLIPSE":
         points = sample_ellipse(entity)
