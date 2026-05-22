@@ -2,6 +2,7 @@ import argparse
 import math
 import os
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import ezdxf
@@ -498,30 +499,39 @@ def find_dxf_files(folder, recursive_level):
     return matches
 
 
-def render_folder_mode(folder, recursive_level, width, scale, line_width):
+def render_folder_mode(folder, recursive_level, width, scale, line_width, max_workers=None):
     matches = find_dxf_files(folder, recursive_level)
 
     if not matches:
         raise RuntimeError(f"No DXF files were found in folder: {folder}")
 
+    if max_workers is None:
+        max_workers = max(1, (os.cpu_count() or 1) - 1)
+
     success_count = 0
     failure_count = 0
 
-    for match in matches:
-        output_path = os.path.splitext(str(match))[0] + ".png"
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_path = {
+            executor.submit(
+                render_single_file,
+                str(match),
+                os.path.splitext(str(match))[0] + ".png",
+                width,
+                scale,
+                line_width,
+            ): match
+            for match in matches
+        }
 
-        try:
-            render_single_file(
-                input_path=str(match),
-                output_path=output_path,
-                width=width,
-                scale=scale,
-                line_width=line_width,
-            )
-            success_count += 1
-        except Exception as exc:
-            failure_count += 1
-            print(f"Error rendering {match}: {exc}", file=sys.stderr)
+        for future in as_completed(future_to_path):
+            match = future_to_path[future]
+            try:
+                future.result()
+                success_count += 1
+            except Exception as exc:
+                failure_count += 1
+                print(f"Error rendering {match}: {exc}", file=sys.stderr)
 
     print(f"Matched DXF files: {len(matches)}")
     print(f"Rendered previews: {success_count}")
@@ -581,6 +591,13 @@ def main():
         help="Black stroke width. Default: 1.0.",
     )
 
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help="Number of parallel worker processes for --folder mode.",
+    )
+
     args = parser.parse_args()
 
     if args.width <= 0:
@@ -602,6 +619,7 @@ def main():
             width=args.width,
             scale=args.scale,
             line_width=args.line_width,
+            max_workers=args.jobs,
         )
         return
 
