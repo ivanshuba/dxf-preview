@@ -1,0 +1,6 @@
+# Python virtual environment
+.venv/
+venv/
+
+# JetBrains / IntelliJ IDEA IDE settings
+.idea/
