@@ -93,9 +93,15 @@ def sample_spline(entity):
 
 def sample_ellipse(entity, segments=240):
     try:
+        start_param = entity.dxf.start_param
+        end_param = entity.dxf.end_param
+
+        while end_param <= start_param:
+            end_param += 2 * math.pi
+
         params = np.linspace(
-            entity.dxf.start_param,
-            entity.dxf.end_param,
+            start_param,
+            end_param,
             segments,
         )
 
@@ -106,6 +112,9 @@ def sample_ellipse(entity, segments=240):
         major_len = math.sqrt(
             major_axis.x ** 2 + major_axis.y ** 2
         )
+
+        if major_len <= 0 or ratio <= 0:
+            return []
 
         angle = math.atan2(
             major_axis.y,
@@ -134,6 +143,13 @@ def sample_ellipse(entity, segments=240):
                     center.y + rotated_y,
                 )
             )
+
+        try:
+            extrusion = entity.dxf.extrusion
+            if extrusion.z < 0:
+                points.reverse()
+        except Exception:
+            pass
 
         return points
 
@@ -202,7 +218,7 @@ def sample_lwpolyline(entity):
 
         return sample_polyline_with_bulges(
             raw_points,
-            closed=bool(entity.closed),
+            closed=is_closed_polyline(entity),
         )
 
     except Exception:
@@ -233,20 +249,51 @@ def sample_polyline(entity):
         return []
 
 
+def points_are_close(first, second, tolerance=1e-9):
+    return (
+        abs(first[0] - second[0]) <= tolerance
+        and abs(first[1] - second[1]) <= tolerance
+    )
+
+
 def sample_polyline_with_bulges(raw_points, closed=False):
     if len(raw_points) < 2:
         return []
 
+    first_point = (
+        raw_points[0][0],
+        raw_points[0][1],
+    )
+
+    last_point = (
+        raw_points[-1][0],
+        raw_points[-1][1],
+    )
+
+    explicitly_closed = points_are_close(first_point, last_point)
+
+    # If the file repeats the first vertex as the last vertex, treat it as closed
+    # but do not create an extra zero-length closing segment.
+    effective_closed = closed or explicitly_closed
+
+    if explicitly_closed and len(raw_points) > 2:
+        points_to_process = raw_points[:-1]
+    else:
+        points_to_process = raw_points
+
+    if len(points_to_process) < 2:
+        return []
+
     result = []
 
-    segment_count = len(raw_points)
-
-    if not closed:
-        segment_count -= 1
+    if effective_closed:
+        segment_count = len(points_to_process)
+    else:
+        segment_count = len(points_to_process) - 1
 
     for index in range(segment_count):
-        current = raw_points[index]
-        next_point = raw_points[(index + 1) % len(raw_points)]
+        current = points_to_process[index]
+        next_point = points_to_process[(index + 1) % len(points_to_process)]
 
         start = (
             current[0],
@@ -271,7 +318,7 @@ def sample_polyline_with_bulges(raw_points, closed=False):
         else:
             result.extend(segment_points)
 
-    if closed and result and result[0] != result[-1]:
+    if effective_closed and result and not points_are_close(result[0], result[-1]):
         result.append(result[0])
 
     return result
@@ -291,26 +338,49 @@ def get_polyline_points(entity):
 
 def is_closed_polyline(entity):
     try:
-        return bool(entity.closed)
+        if hasattr(entity, "closed"):
+            return bool(entity.closed)
+    except Exception:
+        pass
+
+    try:
+        if hasattr(entity, "is_closed"):
+            is_closed = entity.is_closed
+
+            if callable(is_closed):
+                return bool(is_closed())
+
+            return bool(is_closed)
+    except Exception:
+        pass
+
+    try:
+        return bool(entity.dxf.flags & 1)
     except Exception:
         return False
 
 
-def sample_arc(entity, segments=64):
+def sample_arc(entity, segments=96):
     try:
         center = entity.dxf.center
         radius = entity.dxf.radius
 
+        if radius <= 0:
+            return []
+
         start_angle = math.radians(entity.dxf.start_angle)
         end_angle = math.radians(entity.dxf.end_angle)
 
-        if end_angle < start_angle:
+        while end_angle <= start_angle:
             end_angle += 2 * math.pi
 
         angle_span = end_angle - start_angle
 
+        if angle_span <= 1e-12:
+            return []
+
         segment_count = max(
-            2,
+            8,
             int(segments * angle_span / (2 * math.pi)),
         )
 
@@ -320,13 +390,22 @@ def sample_arc(entity, segments=64):
             segment_count,
         )
 
-        return [
+        points = [
             (
                 center.x + radius * math.cos(angle),
                 center.y + radius * math.sin(angle),
             )
             for angle in angles
         ]
+
+        try:
+            extrusion = entity.dxf.extrusion
+            if extrusion.z < 0:
+                points.reverse()
+        except Exception:
+            pass
+
+        return points
 
     except Exception:
         return []
