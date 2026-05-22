@@ -317,11 +317,35 @@ def format_counts(counts):
 
 
 def build_output_path(input_path, output_path):
-    if output_path:
-        return output_path
+    """
+    Interpret --output as either:
+    - a file path, e.g. C:\\temp\\preview.png
+    - a directory path, e.g. C:\\temp\\out or .
+    """
+    default_name = os.path.splitext(os.path.basename(input_path))[0] + ".png"
 
-    base = os.path.splitext(input_path)[0]
-    return base + ".png"
+    if not output_path:
+        return os.path.abspath(
+            os.path.join(os.path.dirname(os.path.abspath(input_path)), default_name)
+        )
+
+    output_path = os.path.expanduser(output_path)
+
+    # If it's an existing directory, write default file name into it.
+    if os.path.isdir(output_path):
+        return os.path.abspath(os.path.join(output_path, default_name))
+
+    # If user passed "." or a path ending with separator, treat it as a directory.
+    if output_path in (".", "..") or output_path.endswith(os.sep):
+        return os.path.abspath(os.path.join(output_path, default_name))
+
+    # If the path has no extension and does not exist yet, treat it as a directory.
+    base_name = os.path.basename(output_path)
+    root, ext = os.path.splitext(base_name)
+    if not ext and not os.path.exists(output_path):
+        return os.path.abspath(os.path.join(output_path, default_name))
+
+    return os.path.abspath(output_path)
 
 
 def main():
