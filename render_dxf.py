@@ -141,23 +141,150 @@ def sample_ellipse(entity, segments=240):
         return []
 
 
+def sample_bulge_segment(start, end, bulge, segments=32):
+    if abs(bulge) < 1e-12:
+        return [start, end]
+
+    x1, y1 = start
+    x2, y2 = end
+
+    dx = x2 - x1
+    dy = y2 - y1
+    chord = math.hypot(dx, dy)
+
+    if chord <= 1e-12:
+        return [start]
+
+    theta = 4.0 * math.atan(bulge)
+
+    radius = chord / (2.0 * math.sin(abs(theta) / 2.0))
+
+    midpoint_x = (x1 + x2) / 2.0
+    midpoint_y = (y1 + y2) / 2.0
+
+    normal_x = -dy / chord
+    normal_y = dx / chord
+
+    center_offset = chord / (2.0 * math.tan(theta / 2.0))
+
+    center_x = midpoint_x + normal_x * center_offset
+    center_y = midpoint_y + normal_y * center_offset
+
+    start_angle = math.atan2(y1 - center_y, x1 - center_x)
+    end_angle = start_angle + theta
+
+    segment_count = max(
+        2,
+        int(segments * abs(theta) / (2.0 * math.pi)),
+    )
+
+    angles = np.linspace(
+        start_angle,
+        end_angle,
+        segment_count,
+    )
+
+    return [
+        (
+            center_x + radius * math.cos(angle),
+            center_y + radius * math.sin(angle),
+        )
+        for angle in angles
+    ]
+
+
+def sample_lwpolyline(entity):
+    try:
+        raw_points = [
+            (point[0], point[1], point[2])
+            for point in entity.get_points("xyb")
+        ]
+
+        return sample_polyline_with_bulges(
+            raw_points,
+            closed=bool(entity.closed),
+        )
+
+    except Exception:
+        return []
+
+
+def sample_polyline(entity):
+    try:
+        raw_points = []
+
+        for vertex in entity.vertices:
+            location = vertex.dxf.location
+            bulge = getattr(vertex.dxf, "bulge", 0.0)
+            raw_points.append(
+                (
+                    location.x,
+                    location.y,
+                    bulge,
+                )
+            )
+
+        return sample_polyline_with_bulges(
+            raw_points,
+            closed=is_closed_polyline(entity),
+        )
+
+    except Exception:
+        return []
+
+
+def sample_polyline_with_bulges(raw_points, closed=False):
+    if len(raw_points) < 2:
+        return []
+
+    result = []
+
+    segment_count = len(raw_points)
+
+    if not closed:
+        segment_count -= 1
+
+    for index in range(segment_count):
+        current = raw_points[index]
+        next_point = raw_points[(index + 1) % len(raw_points)]
+
+        start = (
+            current[0],
+            current[1],
+        )
+
+        end = (
+            next_point[0],
+            next_point[1],
+        )
+
+        bulge = current[2] if len(current) > 2 else 0.0
+
+        segment_points = sample_bulge_segment(
+            start,
+            end,
+            bulge,
+        )
+
+        if result:
+            result.extend(segment_points[1:])
+        else:
+            result.extend(segment_points)
+
+    if closed and result and result[0] != result[-1]:
+        result.append(result[0])
+
+    return result
+
+
 def get_polyline_points(entity):
     dxftype = entity.dxftype()
 
     if dxftype == "POLYLINE":
-        return [
-            (
-                vertex.dxf.location.x,
-                vertex.dxf.location.y,
-            )
-            for vertex in entity.vertices
-        ]
+        return sample_polyline(entity)
 
     if dxftype == "LWPOLYLINE":
-        return [
-            (point[0], point[1])
-            for point in entity.get_points()
-        ]
+        return sample_lwpolyline(entity)
 
     return []
 
@@ -295,7 +422,7 @@ def process_entity(
                 scale,
                 bounds,
                 line_width,
-                closed=is_closed_polyline(entity),
+                closed=False,
             )
         except Exception:
             return False
