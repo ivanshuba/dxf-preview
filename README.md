@@ -1,6 +1,6 @@
 # DXF Preview Renderer
 
-The `render_dxf.py` is a Python 3 utility script creating PNG preview images from DXF files.
+The `render_dxf.py` script is a Python 3 utility creating PNG preview images from DXF files.
 
 - [Overview](#overview)
 - [Requirements](#requirements)
@@ -13,7 +13,7 @@ The `render_dxf.py` is a Python 3 utility script creating PNG preview images fro
 - [Using the script in GitHub Actions](#using-the-script-in-github-actions)
 - [Troubleshooting](#troubleshooting)
 
-## Overview 
+## Overview
 
 The script reads flat 2D DXF geometry, renders it as black lines on a white background, and saves the result as a PNG image. It is designed to work in:
 
@@ -36,7 +36,7 @@ Unsupported, non-2D, annotation, image, hatch, text, and 3D entities are skipped
 
 [Back to top](#dxf-preview-renderer)
 
-## Requirements 
+## Requirements
 
 Minimum recommended Python version:
 
@@ -56,7 +56,7 @@ Main dependencies:
 
 [Back to top](#dxf-preview-renderer)
 
-## Creating a virtual environment 
+## Creating a virtual environment
 
 From the project root, create a virtual environment:
 
@@ -80,7 +80,7 @@ On macOS or Linux, activate the virtual environment with:
 
 [Back to top](#dxf-preview-renderer)
 
-## Installing dependencies 
+## Installing dependencies
 
 After activating the virtual environment, upgrade `pip`:
 
@@ -100,7 +100,7 @@ Then create `requirements.txt`:
 
 [Back to top](#dxf-preview-renderer)
 
-## Usage from terminal 
+## Usage from terminal
 
 Basic usage:
 
@@ -120,9 +120,28 @@ becomes:
 
     .\examples\part.png
 
+### Output path behavior
+
+The `--output` argument can be either:
+
+- a file path, for example `E:\preview.png`
+- a directory path, for example `E:\previews`
+- `.` for the current directory
+- `..` for the parent directory
+
+If a directory is provided, the script automatically saves the PNG using the input filename with a `.png` extension inside that directory.
+
+Examples:
+
+    python render_dxf.py .\drawing.dxf --output E:\previews
+    python render_dxf.py .\drawing.dxf --output .
+    python render_dxf.py .\drawing.dxf --output ..\output
+
+The script also creates missing output directories automatically when needed.
+
 [Back to top](#dxf-preview-renderer)
 
-## Command-line options 
+## Command-line options
 
 ### Input DXF file
 
@@ -130,11 +149,15 @@ The input file path is required:
 
     python render_dxf.py .\drawing.dxf
 
-### Output PNG file
+### Output PNG file or directory
 
-Use `--output` to choose the output file path:
+Use `--output` to choose the output path:
 
     python render_dxf.py .\drawing.dxf --output .\preview.png
+
+Or provide a directory:
+
+    python render_dxf.py .\drawing.dxf --output .\previews
 
 If `--output` is not provided, the output path is created by replacing the input file extension with `.png`.
 
@@ -186,7 +209,7 @@ Default value:
 
 [Back to top](#dxf-preview-renderer)
 
-## Output behavior 
+## Output behavior
 
 The generated PNG uses:
 
@@ -199,9 +222,11 @@ The generated PNG uses:
 
 The script uses Matplotlib's non-interactive `Agg` backend, so it can run without a GUI in CI systems such as GitHub Actions.
 
+If `--output` points to a directory, the script will save the PNG there using the input file name with a `.png` extension.
+
 [Back to top](#dxf-preview-renderer)
 
-## Using the script in PyCharm 
+## Using the script in PyCharm
 
 1. Open the project in PyCharm.
 2. Configure the Python interpreter to use the project virtual environment.
@@ -214,9 +239,13 @@ Example script parameters:
 
     .\examples\part.dxf --output .\examples\part.png --width 1200
 
+You can also point `--output` to a folder:
+
+    .\examples\part.dxf --output .\examples\previews
+
 [Back to top](#dxf-preview-renderer)
 
-## Using the script in GitHub Actions 
+## Using the script in GitHub Actions
 
 Create a workflow file:
 
@@ -305,7 +334,7 @@ To render all DXF files in the repository, use a loop:
 
 [Back to top](#dxf-preview-renderer)
 
-## Troubleshooting 
+## Troubleshooting
 
 ### `No supported flat 2D geometry found`
 
@@ -332,6 +361,27 @@ Check that:
 
 The file may not be a valid DXF file, or it may be damaged. Try opening and re-saving it from a CAD application.
 
+### `No such file or directory` or `Permission denied` when using `--output`
+
+This usually means `--output` points to a directory or an invalid path instead of a file path.
+
+Examples:
+
+- `--output E:\` means "save into the `E:\` folder"
+- `--output .` means "save into the current folder"
+
+Both are valid now if the script can resolve them as directories, but if the target path is not writable, you may still get a permission error.
+
+If you want a guaranteed file output, pass a full file name:
+
+    python render_dxf.py .\drawing.dxf --output E:\preview.png
+
+Or save into a folder and let the script choose the PNG name:
+
+    python render_dxf.py .\drawing.dxf --output E:\previews
+
+[Back to top](#dxf-preview-renderer)
+
 ## Project structure
 
 Typical project structure:
@@ -346,4 +396,3 @@ Typical project structure:
 This utility is for preview generation, not CAD-accurate plotting. It is intended to produce simple visual previews of flat 2D DXF geometry with minimal configuration.
 
 [Back to top](#dxf-preview-renderer)
-
