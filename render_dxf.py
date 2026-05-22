@@ -277,17 +277,25 @@ def process_entity(
     return False
 
 
-def collect_supported_entities(layout):
+def collect_supported_entities_from_container(container, doc, visited_blocks=None):
+    if visited_blocks is None:
+        visited_blocks = set()
+
     entities = []
     found_counts = {}
     skipped_counts = {}
 
-    for entity in layout:
+    for entity in container:
         dxftype = entity.dxftype()
         found_counts[dxftype] = found_counts.get(dxftype, 0) + 1
 
         if dxftype == "INSERT":
-            virtual_entities = flatten_insert(entity)
+            block_name = getattr(entity.dxf, "name", None)
+
+            try:
+                virtual_entities = list(entity.virtual_entities())
+            except Exception:
+                virtual_entities = []
 
             for virtual_entity in virtual_entities:
                 virtual_type = virtual_entity.dxftype()
@@ -298,6 +306,25 @@ def collect_supported_entities(layout):
                 else:
                     skipped_counts[virtual_type] = skipped_counts.get(virtual_type, 0) + 1
 
+            if block_name and block_name not in visited_blocks:
+                visited_blocks.add(block_name)
+                try:
+                    block = doc.blocks[block_name]
+                    nested_entities, nested_found, nested_skipped = collect_supported_entities_from_container(
+                        block,
+                        doc,
+                        visited_blocks,
+                    )
+                    entities.extend(nested_entities)
+
+                    for key, value in nested_found.items():
+                        found_counts[key] = found_counts.get(key, 0) + value
+
+                    for key, value in nested_skipped.items():
+                        skipped_counts[key] = skipped_counts.get(key, 0) + value
+                except Exception:
+                    pass
+
             continue
 
         if dxftype in SUPPORTED_2D:
@@ -306,6 +333,49 @@ def collect_supported_entities(layout):
             skipped_counts[dxftype] = skipped_counts.get(dxftype, 0) + 1
 
     return entities, found_counts, skipped_counts
+
+
+def collect_supported_entities(doc):
+    all_entities = []
+    found_counts = {}
+    skipped_counts = {}
+
+    msp = doc.modelspace()
+    entities, found, skipped = collect_supported_entities_from_container(
+        msp,
+        doc,
+        visited_blocks=set(),
+    )
+    all_entities.extend(entities)
+
+    for key, value in found.items():
+        found_counts[key] = found_counts.get(key, 0) + value
+
+    for key, value in skipped.items():
+        skipped_counts[key] = skipped_counts.get(key, 0) + value
+
+    for block in doc.blocks:
+        block_name = getattr(block, "name", None)
+        if block_name in {"*Model_Space", "*Paper_Space", "*Paper_Space0"}:
+            continue
+
+        try:
+            block_entities, block_found, block_skipped = collect_supported_entities_from_container(
+                block,
+                doc,
+                visited_blocks=set(),
+            )
+            all_entities.extend(block_entities)
+
+            for key, value in block_found.items():
+                found_counts[key] = found_counts.get(key, 0) + value
+
+            for key, value in block_skipped.items():
+                skipped_counts[key] = skipped_counts.get(key, 0) + value
+        except Exception:
+            continue
+
+    return all_entities, found_counts, skipped_counts
 
 
 def format_counts(counts):
@@ -366,7 +436,7 @@ def render_single_file(input_path, output_path, width, scale, line_width):
         "max_y": float("-inf"),
     }
 
-    entities, found_counts, skipped_counts = collect_supported_entities(msp)
+    entities, found_counts, skipped_counts = collect_supported_entities(doc)
 
     rendered_count = 0
 
