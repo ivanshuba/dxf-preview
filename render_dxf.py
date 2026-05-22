@@ -11,9 +11,56 @@ import matplotlib
 # Required for headless rendering in GitHub Actions and other non-GUI environments.
 matplotlib.use("Agg")
 
+def get_extrusion(entity):
+    try:
+        extrusion = entity.dxf.extrusion
+        return (
+            float(extrusion[0]),
+            float(extrusion[1]),
+            float(extrusion[2]),
+        )
+    except Exception:
+        return (0.0, 0.0, 1.0)
+
+
+def is_default_extrusion(entity):
+    extrusion = get_extrusion(entity)
+    return abs(extrusion[2] - 1.0) < 1e-6 and abs(extrusion[0]) < 1e-6 and abs(extrusion[1]) < 1e-6
+
+
+def ocs_point_to_wcs_xy(entity, point):
+    if is_default_extrusion(entity):
+        return float(point[0]), float(point[1])
+
+    try:
+        ocs = OCS(entity.dxf.extrusion)
+        wcs_point = ocs.to_wcs(
+            (
+                float(point[0]),
+                float(point[1]),
+                float(point[2]) if len(point) > 2 else 0.0,
+            )
+        )
+        return wcs_point.x, wcs_point.y
+    except Exception:
+        return float(point[0]), float(point[1])
+
+
+def ocs_points_to_wcs_xy(entity, points):
+    if is_default_extrusion(entity):
+        return [(float(point[0]), float(point[1])) for point in points]
+
+    return [
+        ocs_point_to_wcs_xy(entity, point)
+        for point in points
+    ]
+
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Arc, Circle
 import numpy as np
+
+from ezdxf.math import OCS
 
 
 SUPPORTED_2D = {
@@ -240,10 +287,28 @@ def sample_polyline(entity):
                 )
             )
 
-        return sample_polyline_with_bulges(
+        points = sample_polyline_with_bulges(
             raw_points,
             closed=is_closed_polyline(entity),
         )
+
+        elevation = 0.0
+
+        try:
+            elevation = entity.dxf.elevation
+        except Exception:
+            pass
+
+        ocs_points = [
+            (
+                point[0],
+                point[1],
+                elevation,
+            )
+            for point in points
+        ]
+
+        return ocs_points_to_wcs_xy(entity, ocs_points)
 
     except Exception:
         return []
@@ -390,22 +455,153 @@ def sample_arc(entity, segments=96):
             segment_count,
         )
 
-        points = [
+        angles = np.linspace(
+            start_angle,
+            end_angle,
+            segment_count,
+        )
+
+        ocs_points = [
             (
                 center.x + radius * math.cos(angle),
                 center.y + radius * math.sin(angle),
+                center.z,
             )
             for angle in angles
         ]
 
+        return ocs_points_to_wcs_xy(entity, ocs_points)
+
+    except Exception:
+        return []
+
+
+def sample_arc(entity, segments=96):
+    try:
+        center = entity.dxf.center
+        radius = entity.dxf.radius
+
+        if radius <= 0:
+            return []
+
+        start_angle = math.radians(entity.dxf.start_angle)
+        end_angle = math.radians(entity.dxf.end_angle)
+
+        while end_angle <= start_angle:
+            end_angle += 2 * math.pi
+
+        angle_span = end_angle - start_angle
+
+        if angle_span <= 1e-12:
+            return []
+
+        segment_count = max(
+            8,
+            int(segments * angle_span / (2 * math.pi)),
+        )
+
+        angles = np.linspace(
+            start_angle,
+            end_angle,
+            segment_count,
+        )
+
+        cx = float(center[0])
+        cy = float(center[1])
+        cz = float(center[2]) if hasattr(center, '__len__') and len(center) > 2 else 0.0
+
+        ocs_points = [
+            (
+                cx + radius * math.cos(angle),
+                cy + radius * math.sin(angle),
+                cz,
+            )
+            for angle in angles
+        ]
+
+        return ocs_points_to_wcs_xy(entity, ocs_points)
+
+    except Exception:
+        return []
+
+
+def sample_lwpolyline(entity):
+    try:
+        raw_points = [
+            (point[0], point[1], point[2])
+            for point in entity.get_points("xyb")
+        ]
+
+        points = sample_polyline_with_bulges(
+            raw_points,
+            closed=is_closed_polyline(entity),
+        )
+
+        if is_default_extrusion(entity):
+            return points
+
+        elevation = 0.0
+
         try:
-            extrusion = entity.dxf.extrusion
-            if extrusion.z < 0:
-                points.reverse()
+            elevation = float(entity.dxf.elevation)
         except Exception:
             pass
 
-        return points
+        ocs_points = [
+            (
+                float(point[0]),
+                float(point[1]),
+                elevation,
+            )
+            for point in points
+        ]
+
+        return ocs_points_to_wcs_xy(entity, ocs_points)
+
+    except Exception:
+        return []
+
+
+def sample_polyline(entity):
+    try:
+        raw_points = []
+
+        for vertex in entity.vertices:
+            location = vertex.dxf.location
+            bulge = getattr(vertex.dxf, "bulge", 0.0)
+            raw_points.append(
+                (
+                    float(location[0]),
+                    float(location[1]),
+                    float(bulge),
+                )
+            )
+
+        points = sample_polyline_with_bulges(
+            raw_points,
+            closed=is_closed_polyline(entity),
+        )
+
+        if is_default_extrusion(entity):
+            return points
+
+        elevation = 0.0
+
+        try:
+            elevation = float(entity.dxf.elevation)
+        except Exception:
+            pass
+
+        ocs_points = [
+            (
+                float(point[0]),
+                float(point[1]),
+                elevation,
+            )
+            for point in points
+        ]
+
+        return ocs_points_to_wcs_xy(entity, ocs_points)
 
     except Exception:
         return []
@@ -437,7 +633,12 @@ def process_entity(
         return True
 
     if dxftype == "CIRCLE":
-        center = apply_scale(entity.dxf.center, scale)
+        raw_center = entity.dxf.center
+        cx, cy = ocs_point_to_wcs_xy(
+            entity,
+            (float(raw_center[0]), float(raw_center[1]), float(raw_center[2]) if hasattr(raw_center, '__len__') and len(raw_center) > 2 else 0.0),
+        )
+        center = apply_scale((cx, cy), scale)
         radius = entity.dxf.radius * scale
 
         patch = Circle(
@@ -638,6 +839,8 @@ def build_output_path(input_path, output_path):
     if os.path.isdir(output_path):
         return os.path.abspath(os.path.join(output_path, default_name))
 
+    output_path = os.path.abspath(output_path)
+
     if output_path in (".", "..") or output_path.endswith(os.sep):
         return os.path.abspath(os.path.join(output_path, default_name))
 
@@ -646,7 +849,7 @@ def build_output_path(input_path, output_path):
     if not ext and not os.path.exists(output_path):
         return os.path.abspath(os.path.join(output_path, default_name))
 
-    return os.path.abspath(output_path)
+    return output_path
 
 
 def render_single_file(input_path, output_path, width, scale, line_width):
