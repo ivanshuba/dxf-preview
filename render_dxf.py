@@ -787,27 +787,6 @@ def collect_supported_entities(doc):
     for key, value in skipped.items():
         skipped_counts[key] = skipped_counts.get(key, 0) + value
 
-    for block in doc.blocks:
-        block_name = getattr(block, "name", None)
-        if block_name in {"*Model_Space", "*Paper_Space", "*Paper_Space0"}:
-            continue
-
-        try:
-            block_entities, block_found, block_skipped = collect_supported_entities_from_container(
-                block,
-                doc,
-                visited_blocks=set(),
-            )
-            all_entities.extend(block_entities)
-
-            for key, value in block_found.items():
-                found_counts[key] = found_counts.get(key, 0) + value
-
-            for key, value in block_skipped.items():
-                skipped_counts[key] = skipped_counts.get(key, 0) + value
-        except Exception:
-            continue
-
     return all_entities, found_counts, skipped_counts
 
 
