@@ -831,7 +831,7 @@ def build_output_path(input_path, output_path):
     return output_path
 
 
-def render_single_file(input_path, output_path, width, scale, line_width, square=False):
+def render_single_file(input_path, output_path, width, scale, line_width, square=False, margin=0):
     try:
         doc = ezdxf.readfile(input_path)
     except IOError as exc:
@@ -898,33 +898,25 @@ def render_single_file(input_path, output_path, width, scale, line_width, square
         image_height / dpi,
     )
 
-    padding_x = width_units * 0.005
-    padding_y = height_units * 0.005
-
-    if padding_x == 0:
-        padding_x = 1
-
-    if padding_y == 0:
-        padding_y = 1
-
     if square:
-        # Expand the shorter axis so both axes span the same range,
-        # keeping the drawing centred. This makes the saved image truly square
-        # without relying on bbox_inches="tight" cropping.
         span = max(width_units, height_units)
         cx = (bounds["min_x"] + bounds["max_x"]) / 2.0
         cy = (bounds["min_y"] + bounds["max_y"]) / 2.0
-        half = span / 2.0 * 1.01  # 1% padding on each side
+        half = span / 2.0
+        margin_units = (margin / (image_width - 2 * margin)) * span if image_width > 2 * margin else 0
+        half += margin_units
         ax.set_xlim(cx - half, cx + half)
         ax.set_ylim(cy - half, cy + half)
     else:
+        margin_units_x = (margin / image_width) * width_units
+        margin_units_y = (margin / image_height) * height_units
         ax.set_xlim(
-            bounds["min_x"] - padding_x,
-            bounds["max_x"] + padding_x,
+            bounds["min_x"] - margin_units_x,
+            bounds["max_x"] + margin_units_x,
         )
         ax.set_ylim(
-            bounds["min_y"] - padding_y,
-            bounds["max_y"] + padding_y,
+            bounds["min_y"] - margin_units_y,
+            bounds["max_y"] + margin_units_y,
         )
 
     ax.set_aspect("equal", adjustable="box")
@@ -996,7 +988,7 @@ def find_dxf_files(folder, recursive_level):
     return matches
 
 
-def render_folder_mode(folder, recursive_level, width, scale, line_width, max_workers=None, square=False):
+def render_folder_mode(folder, recursive_level, width, scale, line_width, max_workers=None, square=False, margin=0):
     matches = find_dxf_files(folder, recursive_level)
 
     if not matches:
@@ -1018,6 +1010,7 @@ def render_folder_mode(folder, recursive_level, width, scale, line_width, max_wo
                 scale,
                 line_width,
                 square,
+                margin,
             ): match
             for match in matches
         }
@@ -1096,6 +1089,13 @@ def main():
     )
 
     parser.add_argument(
+        "--margin",
+        type=int,
+        default=0,
+        help="Margin around the drawing in pixels. Default: 0.",
+    )
+
+    parser.add_argument(
         "--jobs",
         type=int,
         default=None,
@@ -1113,6 +1113,9 @@ def main():
     if args.line_width <= 0:
         raise ValueError("--line-width must be greater than zero")
 
+    if args.margin < 0:
+        raise ValueError("--margin must be zero or greater")
+
     if args.folder:
         if args.recursive < 0:
             raise ValueError("--recursive must be zero or greater")
@@ -1125,6 +1128,7 @@ def main():
             line_width=args.line_width,
             max_workers=args.jobs,
             square=args.square,
+            margin=args.margin,
         )
         return
 
@@ -1139,6 +1143,7 @@ def main():
         scale=args.scale,
         line_width=args.line_width,
         square=args.square,
+        margin=args.margin,
     )
 
 
