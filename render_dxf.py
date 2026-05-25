@@ -831,7 +831,7 @@ def build_output_path(input_path, output_path):
     return output_path
 
 
-def render_single_file(input_path, output_path, width, scale, line_width):
+def render_single_file(input_path, output_path, width, scale, line_width, square=False):
     try:
         doc = ezdxf.readfile(input_path)
     except IOError as exc:
@@ -883,10 +883,13 @@ def render_single_file(input_path, output_path, width, scale, line_width):
         height_units = 1
 
     image_width = width
-    image_height = max(
-        1,
-        int(round(image_width * height_units / width_units)),
-    )
+    if square:
+        image_height = width
+    else:
+        image_height = max(
+            1,
+            int(round(image_width * height_units / width_units)),
+        )
 
     dpi = 100
 
@@ -904,15 +907,25 @@ def render_single_file(input_path, output_path, width, scale, line_width):
     if padding_y == 0:
         padding_y = 1
 
-    ax.set_xlim(
-        bounds["min_x"] - padding_x,
-        bounds["max_x"] + padding_x,
-    )
-
-    ax.set_ylim(
-        bounds["min_y"] - padding_y,
-        bounds["max_y"] + padding_y,
-    )
+    if square:
+        # Expand the shorter axis so both axes span the same range,
+        # keeping the drawing centred. This makes the saved image truly square
+        # without relying on bbox_inches="tight" cropping.
+        span = max(width_units, height_units)
+        cx = (bounds["min_x"] + bounds["max_x"]) / 2.0
+        cy = (bounds["min_y"] + bounds["max_y"]) / 2.0
+        half = span / 2.0 * 1.01  # 1% padding on each side
+        ax.set_xlim(cx - half, cx + half)
+        ax.set_ylim(cy - half, cy + half)
+    else:
+        ax.set_xlim(
+            bounds["min_x"] - padding_x,
+            bounds["max_x"] + padding_x,
+        )
+        ax.set_ylim(
+            bounds["min_y"] - padding_y,
+            bounds["max_y"] + padding_y,
+        )
 
     ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
@@ -936,7 +949,7 @@ def render_single_file(input_path, output_path, width, scale, line_width):
         output_path,
         dpi=dpi,
         facecolor="white",
-        bbox_inches="tight",
+        bbox_inches=None if square else "tight",
         pad_inches=0,
         format="png",
     )
@@ -983,7 +996,7 @@ def find_dxf_files(folder, recursive_level):
     return matches
 
 
-def render_folder_mode(folder, recursive_level, width, scale, line_width, max_workers=None):
+def render_folder_mode(folder, recursive_level, width, scale, line_width, max_workers=None, square=False):
     matches = find_dxf_files(folder, recursive_level)
 
     if not matches:
@@ -1004,6 +1017,7 @@ def render_folder_mode(folder, recursive_level, width, scale, line_width, max_wo
                 width,
                 scale,
                 line_width,
+                square,
             ): match
             for match in matches
         }
@@ -1076,6 +1090,12 @@ def main():
     )
 
     parser.add_argument(
+        "--square",
+        action="store_true",
+        help="Fit the drawing into a square output image.",
+    )
+
+    parser.add_argument(
         "--jobs",
         type=int,
         default=None,
@@ -1104,6 +1124,7 @@ def main():
             scale=args.scale,
             line_width=args.line_width,
             max_workers=args.jobs,
+            square=args.square,
         )
         return
 
@@ -1117,6 +1138,7 @@ def main():
         width=args.width,
         scale=args.scale,
         line_width=args.line_width,
+        square=args.square,
     )
 
 
