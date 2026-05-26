@@ -249,9 +249,29 @@ Default value:
 
     1.0
 
+### Square output
+
+Use `--square` to produce a square output image. The drawing is centered and fitted into a square canvas sized `--width` × `--width` pixels, preserving the aspect ratio and leaving equal space on all sides:
+
+    python render_dxf.py .\drawing.dxf --square
+
+By default, the image height is calculated from the drawing aspect ratio. With `--square`, both dimensions are equal to the value of `--width`.
+
+### Margin
+
+Use `--margin` to add a blank border around the drawing in pixels:
+
+    python render_dxf.py .\drawing.dxf --margin 40
+
+Default value:
+
+    0
+
+The margin is applied on all sides. It is useful for ensuring that geometry touching the edge of the bounding box is not clipped. `--margin` works in both normal and `--square` mode.
+
 ### Full example
 
-    python render_dxf.py .\input\part.dxf --output .\output\part-preview.png --width 1400 --scale 1.0 --line-width 1.2
+    python render_dxf.py .\input\part.dxf --output .\output\part-preview.png --width 1400 --scale 1.0 --line-width 1.2 --square --margin 40
 
 [Back to top](#dxf-preview-renderer)
 
@@ -261,10 +281,10 @@ The generated PNG uses:
 
 - White background
 - Black lines
-- Minimal margins
-- Preserved drawing aspect ratio
-- Automatically calculated image height
+- Preserved drawing aspect ratio (or a square canvas when `--square` is used)
+- Automatically calculated image height (unless `--square` is used)
 - Centered drawing based on rendered geometry bounds
+- Optional pixel margin around the drawing (`--margin`)
 
 The script uses Matplotlib's non-interactive `Agg` backend, so it can run without a GUI in CI systems such as GitHub Actions.
 
@@ -288,6 +308,10 @@ Example script parameters:
 You can also point `--output` to a folder:
 
     .\examples\part.dxf --output .\examples\previews
+
+To produce a square preview with a margin:
+
+    .\examples\part.dxf --output .\examples\part.png --width 1200 --square --margin 40
 
 To render all DXF files in a folder and all its subfolders:
 
